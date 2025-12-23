@@ -40,7 +40,7 @@ const YomirgoGame: React.FC = () => {
     const textSequenceIndexRef = useRef(0);
     const specialTexts = ["TO THE MOON", "YOMIRGO", "AI MEGA PLANT"];
 
-    // --- 关卡生成 ---
+    // --- 关卡生成逻辑 ---
     const generateMoreLevel = useCallback((targetY: number) => {
         const platforms: Platform[] = [];
         const coins: Coin[] = [];
@@ -115,7 +115,6 @@ const YomirgoGame: React.FC = () => {
         setTimeout(() => { resetGame(); setIsTransitioning(false); }, 800);
     };
 
-    // --- 手机端触控处理函数 ---
     const handleTouch = (key: string, isPressed: boolean) => {
         keysRef.current[key] = isPressed;
     };
@@ -136,18 +135,23 @@ const YomirgoGame: React.FC = () => {
         const player = playerRef.current;
         const keys = keysRef.current;
         
-        // 键盘和触控统一逻辑
         if (keys['ArrowLeft'] || keys['KeyA']) { player.vx -= 1.2; player.facingRight = false; }
         if (keys['ArrowRight'] || keys['KeyD']) { player.vx += 1.2; player.facingRight = true; }
-        
         player.vx = Math.max(Math.min(player.vx, MOVE_SPEED), -MOVE_SPEED);
-        
+
         if ((keys['Space'] || keys['ArrowUp'] || keys['KeyW']) && player.isGrounded) {
-            player.vy = JUMP_FORCE * 1.15; player.isGrounded = false;
+            // 微调：稍微降低起跳力度配合减小的重力
+            player.vy = JUMP_FORCE * 1.12; 
+            player.isGrounded = false;
             createParticles(player.x + player.w/2, player.y + player.h, COLOR_BRAND_ORANGE, 5, 'explosion');
         }
         
-        player.vy += GRAVITY * 1.3; player.vx *= (FRICTION * 0.98); player.x += player.vx; player.y += player.vy;
+        // --- 核心手感修改：重力从 1.3 降低到 1.15，变得更加轻盈 ---
+        player.vy += GRAVITY * 1.15; 
+        player.vx *= (FRICTION * 0.98); 
+        player.x += player.vx; 
+        player.y += player.vy;
+
         if (player.x < -player.w) player.x = CANVAS_WIDTH;
         if (player.x > CANVAS_WIDTH) player.x = -player.w;
         player.isGrounded = false;
@@ -163,10 +167,8 @@ const YomirgoGame: React.FC = () => {
         const targetCamY = player.y - CANVAS_HEIGHT * 0.6;
         cameraYRef.current += (targetCamY - cameraYRef.current) * 0.15;
         if (player.y < lastGeneratedYRef.current + 2000) generateMoreLevel(lastGeneratedYRef.current - 3000);
-        
         const baseLevel = START_Y + 188; 
         setCurrentPrice(Math.max(0, baseLevel - player.y) * 0.0001);
-
         enemiesRef.current.forEach(enemy => {
             if (enemy.dead) { enemy.deadTimer--; return; }
             enemy.x += enemy.vx;
@@ -238,43 +240,43 @@ const YomirgoGame: React.FC = () => {
             </style>
             <canvas ref={canvasRef} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} className="block w-full h-full object-contain" style={{ imageRendering: 'pixelated' }} />
             
-            {/* 顶部 UI */}
+            {/* 顶层 UI：极致单行适配版 */}
             {(gameState === GameState.PLAYING || gameState === GameState.GAME_OVER) && (
-                <div className="absolute inset-x-0 top-4 px-2 sm:px-4 flex items-start pointer-events-none z-10">
-                    <div className="flex flex-col font-mono font-bold text-sm text-gray-400 mt-2 flex-1">
+                <div className="absolute inset-x-0 top-2 px-1.5 flex items-center justify-between pointer-events-none z-10 h-14">
+                    {/* 左侧：价格与分数 */}
+                    <div className="flex-[1.5] min-w-0 flex flex-col font-mono font-bold whitespace-nowrap leading-tight" style={{ fontSize: 'clamp(7px, 2vw, 13px)', color: '#9ca3af' }}>
                         <div>$YGO PRICE: ${currentPrice.toFixed(4)}</div>
                         <div>SCORE: {score}</div>
                     </div>
-                    <div className="flex-1 flex justify-center mt-1">
-                        <h1 className="text-3xl sm:text-4xl font-black text-[#E57D25] tracking-tight" style={{ fontFamily: 'monospace', textShadow: '4px 4px 0px #A34800' }}>$YGO PUMP</h1>
+
+                    {/* 中间标题：提升 flex 权重 (flex-[4]) 强制占据中心并禁止折行 */}
+                    <div className="flex-[4] flex justify-center px-1">
+                        <h1 className="font-black text-[#E57D25] tracking-tight whitespace-nowrap" 
+                            style={{ 
+                                fontFamily: 'monospace', 
+                                textShadow: '2px 2px 0px #A34800', 
+                                fontSize: 'clamp(14px, 5.5vw, 36px)' // 略微微调 clamp
+                            }}>
+                            $YGO PUMP
+                        </h1>
                     </div>
-                    <div className="flex-1 flex justify-end mt-2"><img src="/logo.png" alt="Logo" className="h-6 w-auto object-contain opacity-70" /></div>
+
+                    {/* 右侧：Logo */}
+                    <div className="flex-1 flex justify-end">
+                        <img src="/logo.png" alt="Logo" className="h-3 sm:h-5 w-auto object-contain opacity-70" />
+                    </div>
                 </div>
             )}
 
-            {/* 手机虚拟按键 (仅在 PLAYING 状态且移动端可见) */}
+            {/* 手机虚拟按键 */}
             {gameState === GameState.PLAYING && (
                 <div className="md:hidden absolute inset-0 pointer-events-none z-40">
-                    {/* 左下角：左右移动 */}
                     <div className="absolute bottom-8 left-4 flex gap-4 pointer-events-auto">
-                        <button 
-                            className="w-16 h-16 rounded-full border-2 border-[#E57D25]/50 bg-black/20 text-[#E57D25] text-3xl font-bold active:bg-[#E57D25]/40 active:scale-90 transition-all shadow-[0_0_15px_rgba(229,125,37,0.3)]"
-                            onTouchStart={() => handleTouch('KeyA', true)}
-                            onTouchEnd={() => handleTouch('KeyA', false)}
-                        >←</button>
-                        <button 
-                            className="w-16 h-16 rounded-full border-2 border-[#E57D25]/50 bg-black/20 text-[#E57D25] text-3xl font-bold active:bg-[#E57D25]/40 active:scale-90 transition-all shadow-[0_0_15px_rgba(229,125,37,0.3)]"
-                            onTouchStart={() => handleTouch('KeyD', true)}
-                            onTouchEnd={() => handleTouch('KeyD', false)}
-                        >→</button>
+                        <button className="w-16 h-16 rounded-full border-2 border-[#E57D25]/50 bg-black/20 text-[#E57D25] text-3xl active:scale-90 transition-all shadow-[0_0_15px_rgba(229,125,37,0.3)]" onTouchStart={() => handleTouch('KeyA', true)} onTouchEnd={() => handleTouch('KeyA', false)}>←</button>
+                        <button className="w-16 h-16 rounded-full border-2 border-[#E57D25]/50 bg-black/20 text-[#E57D25] text-3xl active:scale-90 transition-all shadow-[0_0_15px_rgba(229,125,37,0.3)]" onTouchStart={() => handleTouch('KeyD', true)} onTouchEnd={() => handleTouch('KeyD', false)}>→</button>
                     </div>
-                    {/* 右下角：跳跃 */}
                     <div className="absolute bottom-8 right-4 pointer-events-auto">
-                        <button 
-                            className="w-20 h-20 rounded-full border-2 border-[#E57D25] bg-[#E57D25]/10 text-[#E57D25] text-xl font-black active:bg-[#E57D25]/40 active:scale-95 transition-all shadow-[0_0_20px_rgba(229,125,37,0.5)]"
-                            onTouchStart={() => handleTouch('Space', true)}
-                            onTouchEnd={() => handleTouch('Space', false)}
-                        >UP</button>
+                        <button className="w-20 h-20 rounded-full border-2 border-[#E57D25] bg-[#E57D25]/10 text-[#E57D25] text-xl font-black active:scale-95 transition-all shadow-[0_0_20px_rgba(229,125,37,0.5)]" onTouchStart={() => handleTouch('Space', true)} onTouchEnd={() => handleTouch('Space', false)}>UP</button>
                     </div>
                 </div>
             )}
@@ -282,24 +284,29 @@ const YomirgoGame: React.FC = () => {
             {/* 首页菜单 */}
             {gameState === GameState.MENU && (
                 <div className="absolute inset-0 bg-black flex flex-col items-center justify-between text-white text-center p-4 sm:p-6 z-25 overflow-hidden">
-                    <div className="mt-2 sm:mt-8 flex justify-center"><img src="/logo.png" alt="Logo" className="h-6 sm:h-8 w-auto object-contain" /></div>
-                    <div className="mt-4 sm:mt-10"><h1 className="text-[10vw] sm:text-7xl font-black text-[#E57D25] tracking-tight leading-none" style={{ fontFamily: 'monospace', textShadow: '4px 4px 0px #A34800' }}>$YGO PUMP</h1></div>
-                    <div className="flex-1 flex flex-col items-center justify-center w-full">
-                        <h2 className="text-xl sm:text-3xl font-bold text-white mb-2 sm:mb-4 tracking-widest uppercase">MARKET CLIMBER</h2>
-                        <div className="mb-4 sm:mb-8 text-xs sm:text-base text-gray-300 font-mono tracking-widest leading-tight"><p>RISE WITH THE MARKET</p><p>AVOID DUMP BOTS & LASERS</p></div>
-                        <button onClick={handleInitializePump} className="bg-[#E57D25] hover:bg-[#d46b1a] text-black font-bold py-3 sm:py-5 px-10 sm:px-16 rounded-none border-2 border-white transition-all text-lg sm:text-2xl font-mono animate-pulse touch-manipulation">INITIALIZE PUMP</button>
-                        <div className="mt-6 sm:mt-14 scale-75 sm:scale-100 flex flex-col items-center gap-2 sm:gap-4">
-                            <div className="flex flex-col items-center gap-1"><KeyCap label="W" delay="0s" /><div className="flex gap-1"><KeyCap label="A" delay="0.4s" /><div className="w-8 sm:w-10 h-8 sm:h-10" /><KeyCap label="D" delay="0.8s" /></div></div>
-                            <KeyCap label="SPACE" size="w-40 sm:w-56" delay="1.2s" />
+                    <div className="mt-2 sm:mt-6 flex justify-center"><img src="/logo.png" alt="Logo" className="h-5 sm:h-8 w-auto object-contain" /></div>
+                    <div className="mt-2 sm:mt-4"><h1 className="text-[12vw] sm:text-7xl font-black text-[#E57D25] tracking-tight leading-none whitespace-nowrap" style={{ fontFamily: 'monospace', textShadow: '4px 4px 0px #A34800' }}>$YGO PUMP</h1></div>
+                    <div className="flex-1 flex flex-col items-center justify-center w-full gap-2 sm:gap-6">
+                        <h2 className="text-xl sm:text-3xl font-bold text-white tracking-widest uppercase">MARKET CLIMBER</h2>
+                        <div className="text-[10px] sm:text-base text-gray-400 font-mono tracking-widest leading-tight"><p>RISE WITH THE MARKET</p><p>AVOID DUMP BOTS & LASERS</p></div>
+                        <button onClick={handleInitializePump} className="bg-[#E57D25] hover:bg-[#d46b1a] text-black font-bold py-2 sm:py-5 px-8 sm:px-16 border-2 border-white text-base sm:text-2xl font-mono animate-pulse touch-manipulation">INITIALIZE PUMP</button>
+                        <div className="mt-2 sm:mt-8 scale-75 sm:scale-100 flex flex-col items-center gap-1 sm:gap-4">
+                            <div className="flex flex-col items-center gap-1">
+                                <KeyCap label="W" delay="0s" />
+                                <div className="flex gap-1">
+                                    <KeyCap label="A" delay="0.4s" /><div className="w-8 sm:w-10 h-8 sm:h-10" /><KeyCap label="D" delay="0.8s" />
+                                </div>
+                            </div>
+                            <KeyCap label="SPACE" size="w-32 sm:w-56" delay="1.2s" />
                         </div>
                     </div>
-                    <div className="mb-2 opacity-40 text-[9px] sm:text-[11px] font-mono tracking-widest uppercase">AI MEGA PLANT</div>
+                    <div className="mb-2 opacity-30 text-[8px] sm:text-[11px] font-mono tracking-widest uppercase">AI MEGA PLANT</div>
                 </div>
             )}
 
             {isTransitioning && (
-                <div className="absolute inset-0 bg-black z-50 flex items-center justify-center overflow-hidden">
-                    <div className="pump-transition text-4xl sm:text-5xl font-black text-[#E57D25] font-mono tracking-tighter">PUMPING!!!</div>
+                <div className="absolute inset-0 bg-black z-50 flex items-center justify-center">
+                    <div className="pump-transition text-4xl sm:text-6xl font-black text-[#E57D25] font-mono tracking-tighter">PUMPING!!!</div>
                 </div>
             )}
 
@@ -307,11 +314,11 @@ const YomirgoGame: React.FC = () => {
             {gameState === GameState.GAME_OVER && (
                 <div className="absolute inset-0 bg-black/85 flex flex-col justify-center items-center text-white z-20 p-4">
                     <h2 className="text-3xl sm:text-4xl font-bold mb-4 sm:mb-6 text-red-500 font-mono tracking-tighter uppercase">HOLD IT</h2>
-                    <div className="flex flex-col items-center gap-2 sm:gap-4 mb-8 sm:mb-10">
+                    <div className="flex flex-col items-center gap-2 sm:gap-4 mb-8">
                         <p className="text-xl sm:text-3xl font-mono uppercase">Max Price: <span className="text-[#E57D25]">${currentPrice.toFixed(4)}</span></p>
                         <p className="text-xl sm:text-3xl font-mono uppercase">Max Score: <span className="text-[#E57D25]">{score}</span></p>
                     </div>
-                    <button onClick={resetGame} className="bg-white text-black hover:bg-gray-200 font-bold py-3 px-8 font-mono uppercase touch-manipulation">REBOUND</button>
+                    <button onClick={resetGame} className="bg-white text-black hover:bg-gray-200 font-bold py-2 px-8 font-mono uppercase touch-manipulation">REBOUND</button>
                 </div>
             )}
         </div>
