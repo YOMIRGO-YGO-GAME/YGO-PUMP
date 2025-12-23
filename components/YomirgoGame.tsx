@@ -25,7 +25,10 @@ const YomirgoGame: React.FC = () => {
     const [score, setScore] = useState(0);
     const [currentPrice, setCurrentPrice] = useState(0); 
     const [isTransitioning, setIsTransitioning] = useState(false); 
+    
+    // --- 物理同步核心：引入时间追踪 ---
     const requestRef = useRef<number>(0);
+    const lastTimeRef = useRef<number>(0);
     
     const playerRef = useRef<Player>({ x: 300, y: START_Y, w: 40, h: 32, vx: 0, vy: 0, isGrounded: false, facingRight: true, invulnerable: 0 });
     const keysRef = useRef<{ [key: string]: boolean }>({});
@@ -40,7 +43,6 @@ const YomirgoGame: React.FC = () => {
     const textSequenceIndexRef = useRef(0);
     const specialTexts = ["TO THE MOON", "YOMIRGO", "AI MEGA PLANT"];
 
-    // --- 关卡生成逻辑 ---
     const generateMoreLevel = useCallback((targetY: number) => {
         const platforms: Platform[] = [];
         const coins: Coin[] = [];
@@ -107,7 +109,9 @@ const YomirgoGame: React.FC = () => {
         textSequenceIndexRef.current = 0; 
         coinsRef.current = []; enemiesRef.current = []; lasersRef.current = []; particlesRef.current = [];
         generateMoreLevel(START_Y - 3500);
-        setScore(0); setCurrentPrice(0); setGameState(GameState.PLAYING);
+        setScore(0); setCurrentPrice(0); 
+        lastTimeRef.current = performance.now(); // 重置计时器
+        setGameState(GameState.PLAYING);
     };
 
     const handleInitializePump = () => {
@@ -130,27 +134,32 @@ const YomirgoGame: React.FC = () => {
         return () => { window.removeEventListener('keydown', handleKeyDown); window.removeEventListener('keyup', handleKeyUp); };
     }, []);
 
-    const update = () => {
+    // --- 更新函数：引入 dt (deltaTime) 确保全设备速度一致 ---
+    const update = (dt: number) => {
         if (gameState !== GameState.PLAYING) return;
         const player = playerRef.current;
         const keys = keysRef.current;
         
-        if (keys['ArrowLeft'] || keys['KeyA']) { player.vx -= 1.2; player.facingRight = false; }
-        if (keys['ArrowRight'] || keys['KeyD']) { player.vx += 1.2; player.facingRight = true; }
-        player.vx = Math.max(Math.min(player.vx, MOVE_SPEED), -MOVE_SPEED);
+        // 物理同步系数
+        const speedScale = dt; 
 
+        if (keys['ArrowLeft'] || keys['KeyA']) { player.vx -= 1.2 * speedScale; player.facingRight = false; }
+        if (keys['ArrowRight'] || keys['KeyD']) { player.vx += 1.2 * speedScale; player.facingRight = true; }
+        
+        player.vx = Math.max(Math.min(player.vx, MOVE_SPEED), -MOVE_SPEED);
+        
         if ((keys['Space'] || keys['ArrowUp'] || keys['KeyW']) && player.isGrounded) {
-            // 微调：稍微降低起跳力度配合减小的重力
-            player.vy = JUMP_FORCE * 1.12; 
+            player.vy = JUMP_FORCE * 1.15; 
             player.isGrounded = false;
             createParticles(player.x + player.w/2, player.y + player.h, COLOR_BRAND_ORANGE, 5, 'explosion');
         }
         
-        // --- 核心手感修改：重力从 1.3 降低到 1.15，变得更加轻盈 ---
-        player.vy += GRAVITY * 1.15; 
-        player.vx *= (FRICTION * 0.98); 
-        player.x += player.vx; 
-        player.y += player.vy;
+        // 应用重力与摩擦力 (基于时间)
+        player.vy += GRAVITY * 1.15 * speedScale; 
+        player.vx *= Math.pow(FRICTION * 0.98, speedScale); 
+        
+        player.x += player.vx * speedScale; 
+        player.y += player.vy * speedScale;
 
         if (player.x < -player.w) player.x = CANVAS_WIDTH;
         if (player.x > CANVAS_WIDTH) player.x = -player.w;
@@ -160,20 +169,23 @@ const YomirgoGame: React.FC = () => {
         if (player.y > cameraYRef.current + CANVAS_HEIGHT + deathBuffer) setGameState(GameState.GAME_OVER);
         
         platformsRef.current.forEach(plat => {
-            if (player.vy > 0 && player.x + player.w > plat.x + 5 && player.x < plat.x + plat.w - 5 && player.y + player.h > plat.y && player.y + player.h < plat.y + plat.h + player.vy + 2) {
+            if (player.vy > 0 && player.x + player.w > plat.x + 5 && player.x < plat.x + plat.w - 5 && player.y + player.h > plat.y && player.y + player.h < plat.y + plat.h + (player.vy * speedScale) + 2) {
                 player.y = plat.y - player.h; player.vy = 0; player.isGrounded = true;
             }
         });
+
         const targetCamY = player.y - CANVAS_HEIGHT * 0.6;
-        cameraYRef.current += (targetCamY - cameraYRef.current) * 0.15;
+        cameraYRef.current += (targetCamY - cameraYRef.current) * 0.15 * speedScale;
+        
         if (player.y < lastGeneratedYRef.current + 2000) generateMoreLevel(lastGeneratedYRef.current - 3000);
         const baseLevel = START_Y + 188; 
         setCurrentPrice(Math.max(0, baseLevel - player.y) * 0.0001);
+
         enemiesRef.current.forEach(enemy => {
-            if (enemy.dead) { enemy.deadTimer--; return; }
-            enemy.x += enemy.vx;
+            if (enemy.dead) { enemy.deadTimer -= speedScale; return; }
+            enemy.x += enemy.vx * speedScale;
             if (enemy.x <= enemy.patrolStart || enemy.x + enemy.w >= enemy.patrolEnd) enemy.vx *= -1;
-            enemy.shootTimer--;
+            enemy.shootTimer -= speedScale;
             if (enemy.shootTimer <= 0) {
                 const dir = enemy.vx > 0 ? 1 : -1;
                 lasersRef.current.push({ id: Math.random(), x: enemy.x + (dir > 0 ? enemy.w : 0), y: enemy.y + enemy.h/2 - 2, w: 20, h: 4, vx: dir * LASER_SPEED, life: 60 });
@@ -186,19 +198,20 @@ const YomirgoGame: React.FC = () => {
                 } else if (player.invulnerable <= 0) setGameState(GameState.GAME_OVER);
             }
         });
+
         for (let i = lasersRef.current.length - 1; i >= 0; i--) {
-            const l = lasersRef.current[i]; l.x += l.vx; l.life--;
+            const l = lasersRef.current[i]; l.x += l.vx * speedScale; l.life -= speedScale;
             if (l.life <= 0 || l.x < 0 || l.x > CANVAS_WIDTH) { lasersRef.current.splice(i, 1); continue; }
             if (player.invulnerable <= 0 && checkRectCollide(player, l)) setGameState(GameState.GAME_OVER);
         }
+
         coinsRef.current.forEach(coin => { if (!coin.collected && Math.sqrt(Math.pow((player.x + player.w/2) - coin.x, 2) + Math.pow((player.y + player.h/2) - coin.y, 2)) < 20) { coin.collected = true; setScore(prev => prev + 100); createParticles(coin.x, coin.y, COLOR_BRAND_ORANGE, 6, 'sparkle'); } });
-        for (let i = particlesRef.current.length - 1; i >= 0; i--) { const p = particlesRef.current[i]; p.x += p.vx; p.y += p.vy; p.life -= 0.05; if (p.life <= 0) particlesRef.current.splice(i, 1); }
+        for (let i = particlesRef.current.length - 1; i >= 0; i--) { const p = particlesRef.current[i]; p.x += p.vx * speedScale; p.y += p.vy * speedScale; p.life -= 0.05 * speedScale; if (p.life <= 0) particlesRef.current.splice(i, 1); }
     };
 
     const checkRectCollide = (r1: Player, r2: { x: number; y: number; w: number; h: number }) => (
         r1.x < r2.x + r2.w && r1.x + r1.w > r2.x && r1.y < r2.y + r2.h && r1.y + r1.h > r2.y
     );
-    
     const createParticles = (x: number, y: number, color: string, count: number, type: 'trail' | 'sparkle' | 'explosion') => { 
         for (let i = 0; i < count; i++) particlesRef.current.push({ id: Math.random(), x, y, vx: (Math.random() - 0.5) * 6, vy: (Math.random() - 0.5) * 6, life: 1.0, color, size: Math.random() * 4 + 2, type }); 
     };
@@ -211,10 +224,7 @@ const YomirgoGame: React.FC = () => {
         ctx.save(); ctx.translate(0, -Math.floor(cameraYRef.current));
         platformsRef.current.forEach(plat => {
             ctx.fillStyle = plat.color || '#444'; ctx.fillRect(plat.x, plat.y, plat.w, plat.h);
-            if (plat.type === 'text' && plat.text) { 
-                ctx.fillStyle = '#000'; ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; 
-                ctx.fillText(plat.text, plat.x + plat.w/2, plat.y + plat.h/2); 
-            }
+            if (plat.type === 'text' && plat.text) { ctx.fillStyle = '#000'; ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(plat.text, plat.x + plat.w/2, plat.y + plat.h/2); }
         });
         enemiesRef.current.forEach(enemy => { if (!enemy.dead) { ctx.fillStyle = '#555'; ctx.fillRect(enemy.x, enemy.y, enemy.w, enemy.h); ctx.fillStyle = 'red'; ctx.fillRect(enemy.vx > 0 ? enemy.x + enemy.w - 10 : enemy.x + 6, enemy.y + 8, 4, 4); } });
         lasersRef.current.forEach(l => { ctx.fillStyle = '#FF0000'; ctx.fillRect(l.x, l.y, l.w, l.h); });
@@ -225,8 +235,28 @@ const YomirgoGame: React.FC = () => {
         ctx.globalAlpha = 1.0; ctx.restore();
     };
 
-    const loop = () => { if (requestRef.current) cancelAnimationFrame(requestRef.current); if (gameState === GameState.PLAYING) update(); if (canvasRef.current) { const ctx = canvasRef.current.getContext('2d'); if (ctx) draw(ctx); } requestRef.current = requestAnimationFrame(loop); };
-    useEffect(() => { requestRef.current = requestAnimationFrame(loop); return () => cancelAnimationFrame(requestRef.current); }, [gameState]);
+    // --- 循环函数升级：计算 deltaTime 并传递给 update ---
+    const loop = (timestamp: number) => {
+        if (!lastTimeRef.current) lastTimeRef.current = timestamp;
+        // 计算当前帧与上一帧的时间间隔，并归一化（以 60FPS, 16.6ms 为 1个单位）
+        const dt = (timestamp - lastTimeRef.current) / 16.666;
+        lastTimeRef.current = timestamp;
+
+        if (gameState === GameState.PLAYING) {
+            update(Math.min(dt, 2)); // 限制 dt 最大值为 2，防止切出网页后突然弹射
+        }
+        
+        if (canvasRef.current) {
+            const ctx = canvasRef.current.getContext('2d');
+            if (ctx) draw(ctx);
+        }
+        requestRef.current = requestAnimationFrame(loop);
+    };
+
+    useEffect(() => {
+        requestRef.current = requestAnimationFrame(loop);
+        return () => cancelAnimationFrame(requestRef.current);
+    }, [gameState]);
 
     return (
         <div className="relative rounded-xl overflow-hidden shadow-[0_0_20px_rgba(229,125,37,0.3)] border-4 border-[#333] bg-black w-full max-w-[600px] h-auto aspect-[3/4] sm:aspect-auto">
@@ -234,54 +264,39 @@ const YomirgoGame: React.FC = () => {
                 {`
                 @keyframes keyGlow { 0%, 100% { border-color: rgba(229, 125, 37, 0.3); color: rgba(229, 125, 37, 0.4); box-shadow: none; } 15% { border-color: rgba(229, 125, 37, 1); color: rgba(229, 125, 37, 1); box-shadow: 0 0 15px rgba(229, 125, 37, 0.8), inset 0 0 5px rgba(229, 125, 37, 0.5); } 30%, 100% { border-color: rgba(229, 125, 37, 0.3); color: rgba(229, 125, 37, 0.4); box-shadow: none; } }
                 .animate-key-glow { animation: keyGlow 2.5s infinite ease-in-out; }
-                @keyframes pumpFlash { 0% { opacity: 0; transform: scale(0.9); } 50% { opacity: 1; transform: scale(1.1); text-shadow: 0 0 25px rgba(229,125,37,0.9), 0 0 10px rgba(229,125,37,1); } 100% { opacity: 0; transform: scale(1.3); } }
+                @keyframes pumpFlash { 0% { opacity: 0; transform: scale(0.9); } 50% { opacity: 1; transform: scale(1.1); text-shadow: 0 0 35px rgba(229,125,37,0.9), 0 0 15px rgba(229,125,37,1); } 100% { opacity: 0; transform: scale(1.3); } }
                 .pump-transition { animation: pumpFlash 0.8s ease-out forwards; }
                 `}
             </style>
             <canvas ref={canvasRef} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} className="block w-full h-full object-contain" style={{ imageRendering: 'pixelated' }} />
             
-            {/* 顶层 UI：极致单行适配版 */}
             {(gameState === GameState.PLAYING || gameState === GameState.GAME_OVER) && (
                 <div className="absolute inset-x-0 top-2 px-1.5 flex items-center justify-between pointer-events-none z-10 h-14">
-                    {/* 左侧：价格与分数 */}
                     <div className="flex-[1.5] min-w-0 flex flex-col font-mono font-bold whitespace-nowrap leading-tight" style={{ fontSize: 'clamp(7px, 2vw, 13px)', color: '#9ca3af' }}>
                         <div>$YGO PRICE: ${currentPrice.toFixed(4)}</div>
                         <div>SCORE: {score}</div>
                     </div>
-
-                    {/* 中间标题：提升 flex 权重 (flex-[4]) 强制占据中心并禁止折行 */}
                     <div className="flex-[4] flex justify-center px-1">
-                        <h1 className="font-black text-[#E57D25] tracking-tight whitespace-nowrap" 
-                            style={{ 
-                                fontFamily: 'monospace', 
-                                textShadow: '2px 2px 0px #A34800', 
-                                fontSize: 'clamp(14px, 5.5vw, 36px)' // 略微微调 clamp
-                            }}>
-                            $YGO PUMP
-                        </h1>
+                        <h1 className="font-black text-[#E57D25] tracking-tight whitespace-nowrap" style={{ fontFamily: 'monospace', textShadow: '2px 2px 0px #A34800', fontSize: 'clamp(14px, 5.5vw, 36px)' }}>$YGO PUMP</h1>
                     </div>
-
-                    {/* 右侧：Logo */}
                     <div className="flex-1 flex justify-end">
                         <img src="/logo.png" alt="Logo" className="h-3 sm:h-5 w-auto object-contain opacity-70" />
                     </div>
                 </div>
             )}
 
-            {/* 手机虚拟按键 */}
             {gameState === GameState.PLAYING && (
                 <div className="md:hidden absolute inset-0 pointer-events-none z-40">
                     <div className="absolute bottom-8 left-4 flex gap-4 pointer-events-auto">
-                        <button className="w-16 h-16 rounded-full border-2 border-[#E57D25]/50 bg-black/20 text-[#E57D25] text-3xl active:scale-90 transition-all shadow-[0_0_15px_rgba(229,125,37,0.3)]" onTouchStart={() => handleTouch('KeyA', true)} onTouchEnd={() => handleTouch('KeyA', false)}>←</button>
-                        <button className="w-16 h-16 rounded-full border-2 border-[#E57D25]/50 bg-black/20 text-[#E57D25] text-3xl active:scale-90 transition-all shadow-[0_0_15px_rgba(229,125,37,0.3)]" onTouchStart={() => handleTouch('KeyD', true)} onTouchEnd={() => handleTouch('KeyD', false)}>→</button>
+                        <button className="w-16 h-16 rounded-full border-2 border-[#E57D25]/50 bg-black/20 text-[#E57D25] text-3xl active:scale-90 transition-all" onTouchStart={() => handleTouch('KeyA', true)} onTouchEnd={() => handleTouch('KeyA', false)}>←</button>
+                        <button className="w-16 h-16 rounded-full border-2 border-[#E57D25]/50 bg-black/20 text-[#E57D25] text-3xl active:scale-90 transition-all" onTouchStart={() => handleTouch('KeyD', true)} onTouchEnd={() => handleTouch('KeyD', false)}>→</button>
                     </div>
                     <div className="absolute bottom-8 right-4 pointer-events-auto">
-                        <button className="w-20 h-20 rounded-full border-2 border-[#E57D25] bg-[#E57D25]/10 text-[#E57D25] text-xl font-black active:scale-95 transition-all shadow-[0_0_20px_rgba(229,125,37,0.5)]" onTouchStart={() => handleTouch('Space', true)} onTouchEnd={() => handleTouch('Space', false)}>UP</button>
+                        <button className="w-20 h-20 rounded-full border-2 border-[#E57D25] bg-[#E57D25]/10 text-[#E57D25] text-xl font-black active:scale-95 transition-all" onTouchStart={() => handleTouch('Space', true)} onTouchEnd={() => handleTouch('Space', false)}>UP</button>
                     </div>
                 </div>
             )}
 
-            {/* 首页菜单 */}
             {gameState === GameState.MENU && (
                 <div className="absolute inset-0 bg-black flex flex-col items-center justify-between text-white text-center p-4 sm:p-6 z-25 overflow-hidden">
                     <div className="mt-2 sm:mt-6 flex justify-center"><img src="/logo.png" alt="Logo" className="h-5 sm:h-8 w-auto object-contain" /></div>
@@ -293,9 +308,7 @@ const YomirgoGame: React.FC = () => {
                         <div className="mt-2 sm:mt-8 scale-75 sm:scale-100 flex flex-col items-center gap-1 sm:gap-4">
                             <div className="flex flex-col items-center gap-1">
                                 <KeyCap label="W" delay="0s" />
-                                <div className="flex gap-1">
-                                    <KeyCap label="A" delay="0.4s" /><div className="w-8 sm:w-10 h-8 sm:h-10" /><KeyCap label="D" delay="0.8s" />
-                                </div>
+                                <div className="flex gap-1"><KeyCap label="A" delay="0.4s" /><div className="w-8 sm:w-10 h-8 sm:h-10" /><KeyCap label="D" delay="0.8s" /></div>
                             </div>
                             <KeyCap label="SPACE" size="w-32 sm:w-56" delay="1.2s" />
                         </div>
@@ -310,7 +323,6 @@ const YomirgoGame: React.FC = () => {
                 </div>
             )}
 
-            {/* 结算界面 */}
             {gameState === GameState.GAME_OVER && (
                 <div className="absolute inset-0 bg-black/85 flex flex-col justify-center items-center text-white z-20 p-4">
                     <h2 className="text-3xl sm:text-4xl font-bold mb-4 sm:mb-6 text-red-500 font-mono tracking-tighter uppercase">HOLD IT</h2>
