@@ -215,7 +215,6 @@ const YomirgoGame: React.FC = () => {
             </style>
             <canvas ref={canvasRef} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} className="block w-full h-full object-contain" style={{ imageRendering: 'pixelated' }} />
             
-            {/* 游戏内 UI - 响应式对齐 */}
             {(gameState === GameState.PLAYING || gameState === GameState.GAME_OVER) && (
                 <div className="absolute inset-x-0 top-2 px-2 sm:px-4 flex items-center justify-between pointer-events-none z-10 h-12 sm:h-16">
                     <div className="flex-1 flex flex-col font-mono font-bold whitespace-nowrap" style={{ fontSize: 'clamp(8px, 2.5vw, 14px)', color: '#9ca3af' }}>
@@ -231,41 +230,19 @@ const YomirgoGame: React.FC = () => {
                 </div>
             )}
 
-            {/* 首页菜单 - 核心适配优化点 */}
             {gameState === GameState.MENU && (
                 <div className="absolute inset-0 bg-black flex flex-col items-center justify-between text-white text-center p-4 sm:p-6 z-25 overflow-hidden">
-                    {/* 顶部 Logo */}
                     <div className="mt-2 sm:mt-8 flex justify-center"><img src="/logo.png" alt="Logo" className="h-6 sm:h-8 w-auto object-contain" /></div>
-                    
-                    {/* 标题 */}
-                    <div className="mt-4 sm:mt-10">
-                        <h1 className="text-[10vw] sm:text-7xl font-black text-[#E57D25] tracking-tight leading-none" style={{ fontFamily: 'monospace', textShadow: '4px 4px 0px #A34800' }}>$YGO PUMP</h1>
-                    </div>
-
-                    {/* 按钮与说明整体区域 */}
+                    <div className="mt-4 sm:mt-10"><h1 className="text-[10vw] sm:text-7xl font-black text-[#E57D25] tracking-tight leading-none" style={{ fontFamily: 'monospace', textShadow: '4px 4px 0px #A34800' }}>$YGO PUMP</h1></div>
                     <div className="flex-1 flex flex-col items-center justify-center w-full">
                         <h2 className="text-xl sm:text-3xl font-bold text-white mb-2 sm:mb-4 tracking-widest uppercase">MARKET CLIMBER</h2>
-                        <div className="mb-4 sm:mb-8 text-xs sm:text-base text-gray-300 font-mono tracking-widest leading-tight">
-                            <p>RISE WITH THE MARKET</p>
-                            <p>AVOID DUMP BOTS & LASERS</p>
-                        </div>
+                        <div className="mb-4 sm:mb-8 text-xs sm:text-base text-gray-300 font-mono tracking-widest leading-tight"><p>RISE WITH THE MARKET</p><p>AVOID DUMP BOTS & LASERS</p></div>
                         <button onClick={handleInitializePump} className="bg-[#E57D25] hover:bg-[#d46b1a] text-black font-bold py-3 sm:py-5 px-10 sm:px-16 rounded-none border-2 border-white transition-all text-lg sm:text-2xl font-mono animate-pulse touch-manipulation">INITIALIZE PUMP</button>
-                        
-                        {/* 键盘 UI - 在超窄手机屏上适当缩小 */}
                         <div className="mt-6 sm:mt-14 scale-75 sm:scale-100 flex flex-col items-center gap-2 sm:gap-4">
-                            <div className="flex flex-col items-center gap-1">
-                                <KeyCap label="W" delay="0s" />
-                                <div className="flex gap-1">
-                                    <KeyCap label="A" delay="0.4s" />
-                                    <div className="w-8 sm:w-10 h-8 sm:h-10" /> 
-                                    <KeyCap label="D" delay="0.8s" />
-                                </div>
-                            </div>
+                            <div className="flex flex-col items-center gap-1"><KeyCap label="W" delay="0s" /><div className="flex gap-1"><KeyCap label="A" delay="0.4s" /><div className="w-8 sm:w-10 h-8 sm:h-10" /><KeyCap label="D" delay="0.8s" /></div></div>
                             <KeyCap label="SPACE" size="w-40 sm:w-56" delay="1.2s" />
                         </div>
                     </div>
-                    
-                    {/* 版权信息置底 */}
                     <div className="mb-2 opacity-40 text-[9px] sm:text-[11px] font-mono tracking-widest uppercase">AI MEGA PLANT</div>
                 </div>
             )}
@@ -276,7 +253,6 @@ const YomirgoGame: React.FC = () => {
                 </div>
             )}
 
-            {/* 结算界面适配 */}
             {gameState === GameState.GAME_OVER && (
                 <div className="absolute inset-0 bg-black/85 flex flex-col justify-center items-center text-white z-20 p-4">
                     <h2 className="text-3xl sm:text-4xl font-bold mb-4 sm:mb-6 text-red-500 font-mono tracking-tighter uppercase">HOLD IT</h2>
