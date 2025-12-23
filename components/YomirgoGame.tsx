@@ -8,8 +8,9 @@ import {
     START_Y
 } from '../constants';
 
-// --- 辅助组件：移至外部以通过 Vercel 严格构建检查 ---
-const KeyCap = ({ label, size = 'w-8 sm:w-10', delay = '0s' }: { label: string; size?: string; delay?: string }) => (
+// --- 1. 辅助组件移至外部：确保 Vercel 构建通过 ---
+interface KeyCapProps { label: string; size?: string; delay?: string }
+const KeyCap: React.FC<KeyCapProps> = ({ label, size = 'w-8 sm:w-10', delay = '0s' }) => (
     <div 
         style={{ animationDelay: delay }} 
         className={`${size} h-8 sm:h-10 border-2 border-[#E57D25]/30 rounded flex items-center justify-center text-[#E57D25]/40 font-bold font-mono text-xs sm:text-base transition-all animate-key-glow`}
@@ -26,21 +27,20 @@ const YomirgoGame: React.FC = () => {
     const [isTransitioning, setIsTransitioning] = useState(false); 
     const requestRef = useRef<number>(0);
     
+    // --- 2. 核心参数：严格保留用户确认的手感 ---
     const playerRef = useRef<Player>({ x: 300, y: START_Y, w: 40, h: 32, vx: 0, vy: 0, isGrounded: false, facingRight: true, invulnerable: 0 });
     const keysRef = useRef<{ [key: string]: boolean }>({});
     const cameraYRef = useRef(START_Y - CANVAS_HEIGHT + 200);
-    
     const platformsRef = useRef<Platform[]>([]);
     const coinsRef = useRef<Coin[]>([]);
     const particlesRef = useRef<Particle[]>([]);
     const enemiesRef = useRef<Enemy[]>([]);
     const lasersRef = useRef<Laser[]>([]);
     const lastGeneratedYRef = useRef(START_Y);
-
     const textSequenceIndexRef = useRef(0);
     const specialTexts = ["TO THE MOON", "YOMIRGO", "AI MEGA PLANT"];
 
-    // --- 关卡生成逻辑 ---
+    // --- 3. 关卡生成逻辑：保留难度平衡 ---
     const generateMoreLevel = useCallback((targetY: number) => {
         const platforms: Platform[] = [];
         const coins: Coin[] = [];
@@ -81,9 +81,7 @@ const YomirgoGame: React.FC = () => {
                     coins.push({ id: Math.random(), x: x + w/2, y: currentY - 30, size: 10, collected: false, rotationOffset: Math.random() });
                 }
             }
-            const gapMin = isHardMode ? 100 : 90;
-            const gapMax = isHardMode ? 80 : 60;
-            currentY -= (gapMin + Math.random() * gapMax); 
+            currentY -= (isHardMode ? 100 + Math.random()*80 : 90 + Math.random()*60); 
         }
         platformsRef.current = [...platformsRef.current, ...platforms];
         coinsRef.current = [...coinsRef.current, ...coins];
@@ -136,8 +134,7 @@ const YomirgoGame: React.FC = () => {
         if (keys['ArrowRight'] || keys['KeyD']) { player.vx += 1.2; player.facingRight = true; }
         player.vx = Math.max(Math.min(player.vx, MOVE_SPEED), -MOVE_SPEED);
         if ((keys['Space'] || keys['ArrowUp'] || keys['KeyW']) && player.isGrounded) {
-            player.vy = JUMP_FORCE * 1.15; 
-            player.isGrounded = false;
+            player.vy = JUMP_FORCE * 1.15; player.isGrounded = false;
             createParticles(player.x + player.w/2, player.y + player.h, COLOR_BRAND_ORANGE, 5, 'explosion');
         }
         player.vy += GRAVITY * 1.3; player.vx *= (FRICTION * 0.98); player.x += player.vx; player.y += player.vy;
@@ -183,10 +180,10 @@ const YomirgoGame: React.FC = () => {
         for (let i = particlesRef.current.length - 1; i >= 0; i--) { const p = particlesRef.current[i]; p.x += p.vx; p.y += p.vy; p.life -= 0.05; if (p.life <= 0) particlesRef.current.splice(i, 1); }
     };
 
+    // --- 4. 辅助逻辑：类型修复 ---
     const checkRectCollide = (r1: Player, r2: { x: number; y: number; w: number; h: number }) => (
         r1.x < r2.x + r2.w && r1.x + r1.w > r2.x && r1.y < r2.y + r2.h && r1.y + r1.h > r2.y
     );
-    
     const createParticles = (x: number, y: number, color: string, count: number, type: 'trail' | 'sparkle' | 'explosion') => { 
         for (let i = 0; i < count; i++) particlesRef.current.push({ id: Math.random(), x, y, vx: (Math.random() - 0.5) * 6, vy: (Math.random() - 0.5) * 6, life: 1.0, color, size: Math.random() * 4 + 2, type }); 
     };
@@ -199,10 +196,7 @@ const YomirgoGame: React.FC = () => {
         ctx.save(); ctx.translate(0, -Math.floor(cameraYRef.current));
         platformsRef.current.forEach(plat => {
             ctx.fillStyle = plat.color || '#444'; ctx.fillRect(plat.x, plat.y, plat.w, plat.h);
-            if (plat.type === 'text' && plat.text) { 
-                ctx.fillStyle = '#000'; ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; 
-                ctx.fillText(plat.text, plat.x + plat.w/2, plat.y + plat.h/2); 
-            }
+            if (plat.type === 'text' && plat.text) { ctx.fillStyle = '#000'; ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(plat.text, plat.x + plat.w/2, plat.y + plat.h/2); }
         });
         enemiesRef.current.forEach(enemy => { if (!enemy.dead) { ctx.fillStyle = '#555'; ctx.fillRect(enemy.x, enemy.y, enemy.w, enemy.h); ctx.fillStyle = 'red'; ctx.fillRect(enemy.vx > 0 ? enemy.x + enemy.w - 10 : enemy.x + 6, enemy.y + 8, 4, 4); } });
         lasersRef.current.forEach(l => { ctx.fillStyle = '#FF0000'; ctx.fillRect(l.x, l.y, l.w, l.h); });
@@ -216,62 +210,77 @@ const YomirgoGame: React.FC = () => {
     const loop = () => { if (requestRef.current) cancelAnimationFrame(requestRef.current); if (gameState === GameState.PLAYING) update(); if (canvasRef.current) { const ctx = canvasRef.current.getContext('2d'); if (ctx) draw(ctx); } requestRef.current = requestAnimationFrame(loop); };
     useEffect(() => { requestRef.current = requestAnimationFrame(loop); return () => cancelAnimationFrame(requestRef.current); }, [gameState]);
 
+    // --- 5. 渲染部分：深度适配所有屏幕高度 ---
     return (
         <div className="relative rounded-xl overflow-hidden shadow-[0_0_20px_rgba(229,125,37,0.3)] border-4 border-[#333] bg-black w-full max-w-[600px] h-auto aspect-[3/4] sm:aspect-auto">
             <style>
                 {`
                 @keyframes keyGlow { 0%, 100% { border-color: rgba(229, 125, 37, 0.3); color: rgba(229, 125, 37, 0.4); box-shadow: none; } 15% { border-color: rgba(229, 125, 37, 1); color: rgba(229, 125, 37, 1); box-shadow: 0 0 15px rgba(229, 125, 37, 0.8), inset 0 0 5px rgba(229, 125, 37, 0.5); } 30%, 100% { border-color: rgba(229, 125, 37, 0.3); color: rgba(229, 125, 37, 0.4); box-shadow: none; } }
                 .animate-key-glow { animation: keyGlow 2.5s infinite ease-in-out; }
-                @keyframes pumpFlash { 0% { opacity: 0; transform: scale(0.9); } 50% { opacity: 1; transform: scale(1.1); text-shadow: 0 0 25px rgba(229,125,37,0.9), 0 0 10px rgba(229,125,37,1); } 100% { opacity: 0; transform: scale(1.3); } }
+                @keyframes pumpFlash { 0% { opacity: 0; transform: scale(0.9); } 50% { opacity: 1; transform: scale(1.1); text-shadow: 0 0 35px rgba(229,125,37,0.9), 0 0 15px rgba(229,125,37,1); } 100% { opacity: 0; transform: scale(1.3); } }
                 .pump-transition { animation: pumpFlash 0.8s ease-out forwards; }
                 `}
             </style>
             <canvas ref={canvasRef} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} className="block w-full h-full object-contain" style={{ imageRendering: 'pixelated' }} />
             
+            {/* 游戏内 UI - 全方位自适应布局 */}
             {(gameState === GameState.PLAYING || gameState === GameState.GAME_OVER) && (
-                <div className="absolute inset-x-0 top-4 px-2 sm:px-4 flex items-start pointer-events-none z-10">
-                    <div className="flex flex-col font-mono font-bold text-sm text-gray-400 mt-2 flex-1">
+                <div className="absolute inset-x-0 top-2 px-2 sm:px-4 flex items-center justify-between pointer-events-none z-10 h-12 sm:h-16">
+                    <div className="flex-1 flex flex-col font-mono font-bold whitespace-nowrap" style={{ fontSize: 'clamp(8px, 2.5vw, 14px)', color: '#9ca3af' }}>
                         <div>$YGO PRICE: ${currentPrice.toFixed(4)}</div>
                         <div>SCORE: {score}</div>
                     </div>
-                    <div className="flex-1 flex justify-center mt-1">
-                        <h1 className="text-3xl sm:text-4xl font-black text-[#E57D25] tracking-tight" style={{ fontFamily: 'monospace', textShadow: '4px 4px 0px #A34800' }}>$YGO PUMP</h1>
+                    <div className="flex-[2] flex justify-center">
+                        <h1 className="font-black text-[#E57D25] tracking-tight whitespace-nowrap" style={{ fontFamily: 'monospace', textShadow: '2px 2px 0px #A34800', fontSize: 'clamp(14px, 5vw, 36px)' }}>$YGO PUMP</h1>
                     </div>
-                    <div className="flex-1 flex justify-end mt-2"><img src="/logo.png" alt="Logo" className="h-6 w-auto object-contain opacity-70" /></div>
+                    <div className="flex-1 flex justify-end">
+                        <img src="/logo.png" alt="Logo" className="h-3 sm:h-6 w-auto object-contain opacity-70" />
+                    </div>
                 </div>
             )}
 
+            {/* 首页菜单 - 深度高度适配优化 */}
             {gameState === GameState.MENU && (
                 <div className="absolute inset-0 bg-black flex flex-col items-center justify-between text-white text-center p-4 sm:p-6 z-25 overflow-hidden">
-                    <div className="mt-2 sm:mt-8 flex justify-center"><img src="/logo.png" alt="Logo" className="h-6 sm:h-8 w-auto object-contain" /></div>
-                    <div className="mt-4 sm:mt-10"><h1 className="text-[10vw] sm:text-7xl font-black text-[#E57D25] tracking-tight leading-none" style={{ fontFamily: 'monospace', textShadow: '4px 4px 0px #A34800' }}>$YGO PUMP</h1></div>
-                    <div className="flex-1 flex flex-col items-center justify-center w-full">
-                        <h2 className="text-xl sm:text-3xl font-bold text-white mb-2 sm:mb-4 tracking-widest uppercase">MARKET CLIMBER</h2>
-                        <div className="mb-4 sm:mb-8 text-xs sm:text-base text-gray-300 font-mono tracking-widest leading-tight"><p>RISE WITH THE MARKET</p><p>AVOID DUMP BOTS & LASERS</p></div>
-                        <button onClick={handleInitializePump} className="bg-[#E57D25] hover:bg-[#d46b1a] text-black font-bold py-3 sm:py-5 px-10 sm:px-16 rounded-none border-2 border-white transition-all text-lg sm:text-2xl font-mono animate-pulse touch-manipulation">INITIALIZE PUMP</button>
-                        <div className="mt-6 sm:mt-14 scale-75 sm:scale-100 flex flex-col items-center gap-2 sm:gap-4">
-                            <div className="flex flex-col items-center gap-1"><KeyCap label="W" delay="0s" /><div className="flex gap-1"><KeyCap label="A" delay="0.4s" /><div className="w-8 sm:w-10 h-8 sm:h-10" /><KeyCap label="D" delay="0.8s" /></div></div>
-                            <KeyCap label="SPACE" size="w-40 sm:w-56" delay="1.2s" />
+                    <div className="mt-2 sm:mt-6 flex justify-center"><img src="/logo.png" alt="Logo" className="h-5 sm:h-8 w-auto object-contain" /></div>
+                    <div className="mt-2 sm:mt-4">
+                        <h1 className="text-[12vw] sm:text-7xl font-black text-[#E57D25] tracking-tight leading-none" style={{ fontFamily: 'monospace', textShadow: '4px 4px 0px #A34800' }}>$YGO PUMP</h1>
+                    </div>
+                    <div className="flex-1 flex flex-col items-center justify-center w-full gap-2 sm:gap-6">
+                        <h2 className="text-xl sm:text-3xl font-bold text-white tracking-widest uppercase">MARKET CLIMBER</h2>
+                        <div className="text-[10px] sm:text-base text-gray-400 font-mono tracking-widest leading-tight">
+                            <p>RISE WITH THE MARKET</p>
+                            <p>AVOID DUMP BOTS & LASERS</p>
+                        </div>
+                        <button onClick={handleInitializePump} className="bg-[#E57D25] hover:bg-[#d46b1a] text-black font-bold py-2 sm:py-5 px-8 sm:px-16 border-2 border-white text-base sm:text-2xl font-mono animate-pulse touch-manipulation">INITIALIZE PUMP</button>
+                        <div className="mt-2 sm:mt-8 scale-75 sm:scale-100 flex flex-col items-center gap-1 sm:gap-4">
+                            <div className="flex flex-col items-center gap-1">
+                                <KeyCap label="W" delay="0s" />
+                                <div className="flex gap-1">
+                                    <KeyCap label="A" delay="0.4s" /><div className="w-8 sm:w-10 h-8 sm:h-10" /><KeyCap label="D" delay="0.8s" />
+                                </div>
+                            </div>
+                            <KeyCap label="SPACE" size="w-32 sm:w-56" delay="1.2s" />
                         </div>
                     </div>
-                    <div className="mb-2 opacity-40 text-[9px] sm:text-[11px] font-mono tracking-widest uppercase">AI MEGA PLANT</div>
+                    <div className="mb-2 opacity-30 text-[8px] sm:text-[11px] font-mono tracking-widest uppercase">AI MEGA PLANT</div>
                 </div>
             )}
 
             {isTransitioning && (
-                <div className="absolute inset-0 bg-black z-50 flex items-center justify-center overflow-hidden">
-                    <div className="pump-transition text-4xl sm:text-5xl font-black text-[#E57D25] font-mono tracking-tighter">PUMPING!!!</div>
+                <div className="absolute inset-0 bg-black z-50 flex items-center justify-center">
+                    <div className="pump-transition text-4xl sm:text-6xl font-black text-[#E57D25] font-mono tracking-tighter">PUMPING!!!</div>
                 </div>
             )}
 
             {gameState === GameState.GAME_OVER && (
                 <div className="absolute inset-0 bg-black/85 flex flex-col justify-center items-center text-white z-20 p-4">
-                    <h2 className="text-3xl sm:text-4xl font-bold mb-4 sm:mb-6 text-red-500 font-mono tracking-tighter uppercase">HOLD IT</h2>
-                    <div className="flex flex-col items-center gap-2 sm:gap-4 mb-8 sm:mb-10">
+                    <h2 className="text-3xl sm:text-4xl font-bold mb-4 text-red-500 font-mono tracking-tighter uppercase">HOLD IT</h2>
+                    <div className="flex flex-col items-center gap-2 sm:gap-4 mb-8">
                         <p className="text-xl sm:text-3xl font-mono uppercase">Max Price: <span className="text-[#E57D25]">${currentPrice.toFixed(4)}</span></p>
                         <p className="text-xl sm:text-3xl font-mono uppercase">Max Score: <span className="text-[#E57D25]">{score}</span></p>
                     </div>
-                    <button onClick={resetGame} className="bg-white text-black hover:bg-gray-200 font-bold py-3 px-8 font-mono uppercase touch-manipulation">REBOUND</button>
+                    <button onClick={resetGame} className="bg-white text-black hover:bg-gray-200 font-bold py-2 px-8 font-mono uppercase touch-manipulation">REBOUND</button>
                 </div>
             )}
         </div>
