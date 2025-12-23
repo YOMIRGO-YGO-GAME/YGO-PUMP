@@ -8,7 +8,7 @@ import {
     START_Y
 } from '../constants';
 
-// --- 辅助组件：键盘按键样式 ---
+// --- 辅助组件：保持外部定义以通过 Vercel 构建 ---
 interface KeyCapProps { label: string; size?: string; delay?: string }
 const KeyCap: React.FC<KeyCapProps> = ({ label, size = 'w-8 sm:w-10', delay = '0s' }) => (
     <div 
@@ -26,7 +26,6 @@ const YomirgoGame: React.FC = () => {
     const [currentPrice, setCurrentPrice] = useState(0); 
     const [isTransitioning, setIsTransitioning] = useState(false); 
     
-    // --- 物理同步核心：引入时间追踪 ---
     const requestRef = useRef<number>(0);
     const lastTimeRef = useRef<number>(0);
     
@@ -110,7 +109,7 @@ const YomirgoGame: React.FC = () => {
         coinsRef.current = []; enemiesRef.current = []; lasersRef.current = []; particlesRef.current = [];
         generateMoreLevel(START_Y - 3500);
         setScore(0); setCurrentPrice(0); 
-        lastTimeRef.current = performance.now(); // 重置计时器
+        lastTimeRef.current = performance.now();
         setGameState(GameState.PLAYING);
     };
 
@@ -134,29 +133,26 @@ const YomirgoGame: React.FC = () => {
         return () => { window.removeEventListener('keydown', handleKeyDown); window.removeEventListener('keyup', handleKeyUp); };
     }, []);
 
-    // --- 更新函数：引入 dt (deltaTime) 确保全设备速度一致 ---
     const update = (dt: number) => {
         if (gameState !== GameState.PLAYING) return;
         const player = playerRef.current;
         const keys = keysRef.current;
-        
-        // 物理同步系数
         const speedScale = dt; 
 
-        if (keys['ArrowLeft'] || keys['KeyA']) { player.vx -= 1.2 * speedScale; player.facingRight = false; }
-        if (keys['ArrowRight'] || keys['KeyD']) { player.vx += 1.2 * speedScale; player.facingRight = true; }
-        
+        if (keys['ArrowLeft'] || keys['KeyA']) { player.vx -= 1.3 * speedScale; player.facingRight = false; }
+        if (keys['ArrowRight'] || keys['KeyD']) { player.vx += 1.3 * speedScale; player.facingRight = true; }
         player.vx = Math.max(Math.min(player.vx, MOVE_SPEED), -MOVE_SPEED);
-        
+
         if ((keys['Space'] || keys['ArrowUp'] || keys['KeyW']) && player.isGrounded) {
-            player.vy = JUMP_FORCE * 1.15; 
+            // --- 调优：更干脆的瞬时起跳动力 (1.35) ---
+            player.vy = JUMP_FORCE * 1.35; 
             player.isGrounded = false;
             createParticles(player.x + player.w/2, player.y + player.h, COLOR_BRAND_ORANGE, 5, 'explosion');
         }
         
-        // 应用重力与摩擦力 (基于时间)
-        player.vy += GRAVITY * 1.15 * speedScale; 
-        player.vx *= Math.pow(FRICTION * 0.98, speedScale); 
+        // --- 调优：大幅加强重力倍率 (1.5)，彻底消除滞空飘忽感 ---
+        player.vy += GRAVITY * 1.5 * speedScale; 
+        player.vx *= Math.pow(FRICTION * 0.97, speedScale); 
         
         player.x += player.vx * speedScale; 
         player.y += player.vy * speedScale;
@@ -176,7 +172,6 @@ const YomirgoGame: React.FC = () => {
 
         const targetCamY = player.y - CANVAS_HEIGHT * 0.6;
         cameraYRef.current += (targetCamY - cameraYRef.current) * 0.15 * speedScale;
-        
         if (player.y < lastGeneratedYRef.current + 2000) generateMoreLevel(lastGeneratedYRef.current - 3000);
         const baseLevel = START_Y + 188; 
         setCurrentPrice(Math.max(0, baseLevel - player.y) * 0.0001);
@@ -198,13 +193,11 @@ const YomirgoGame: React.FC = () => {
                 } else if (player.invulnerable <= 0) setGameState(GameState.GAME_OVER);
             }
         });
-
         for (let i = lasersRef.current.length - 1; i >= 0; i--) {
             const l = lasersRef.current[i]; l.x += l.vx * speedScale; l.life -= speedScale;
             if (l.life <= 0 || l.x < 0 || l.x > CANVAS_WIDTH) { lasersRef.current.splice(i, 1); continue; }
             if (player.invulnerable <= 0 && checkRectCollide(player, l)) setGameState(GameState.GAME_OVER);
         }
-
         coinsRef.current.forEach(coin => { if (!coin.collected && Math.sqrt(Math.pow((player.x + player.w/2) - coin.x, 2) + Math.pow((player.y + player.h/2) - coin.y, 2)) < 20) { coin.collected = true; setScore(prev => prev + 100); createParticles(coin.x, coin.y, COLOR_BRAND_ORANGE, 6, 'sparkle'); } });
         for (let i = particlesRef.current.length - 1; i >= 0; i--) { const p = particlesRef.current[i]; p.x += p.vx * speedScale; p.y += p.vy * speedScale; p.life -= 0.05 * speedScale; if (p.life <= 0) particlesRef.current.splice(i, 1); }
     };
@@ -235,21 +228,12 @@ const YomirgoGame: React.FC = () => {
         ctx.globalAlpha = 1.0; ctx.restore();
     };
 
-    // --- 循环函数升级：计算 deltaTime 并传递给 update ---
     const loop = (timestamp: number) => {
         if (!lastTimeRef.current) lastTimeRef.current = timestamp;
-        // 计算当前帧与上一帧的时间间隔，并归一化（以 60FPS, 16.6ms 为 1个单位）
         const dt = (timestamp - lastTimeRef.current) / 16.666;
         lastTimeRef.current = timestamp;
-
-        if (gameState === GameState.PLAYING) {
-            update(Math.min(dt, 2)); // 限制 dt 最大值为 2，防止切出网页后突然弹射
-        }
-        
-        if (canvasRef.current) {
-            const ctx = canvasRef.current.getContext('2d');
-            if (ctx) draw(ctx);
-        }
+        if (gameState === GameState.PLAYING) update(Math.min(dt, 2));
+        if (canvasRef.current) { const ctx = canvasRef.current.getContext('2d'); if (ctx) draw(ctx); }
         requestRef.current = requestAnimationFrame(loop);
     };
 
