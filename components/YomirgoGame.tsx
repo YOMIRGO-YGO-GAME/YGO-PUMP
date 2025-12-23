@@ -8,6 +8,16 @@ import {
     START_Y
 } from '../constants';
 
+// --- 辅助组件：移至外部以通过 Vercel 严格构建检查 ---
+const KeyCap = ({ label, size = 'w-8 sm:w-10', delay = '0s' }: { label: string; size?: string; delay?: string }) => (
+    <div 
+        style={{ animationDelay: delay }} 
+        className={`${size} h-8 sm:h-10 border-2 border-[#E57D25]/30 rounded flex items-center justify-center text-[#E57D25]/40 font-bold font-mono text-xs sm:text-base transition-all animate-key-glow`}
+    >
+        {label}
+    </div>
+);
+
 const YomirgoGame: React.FC = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [gameState, setGameState] = useState<GameState>(GameState.MENU);
@@ -30,6 +40,7 @@ const YomirgoGame: React.FC = () => {
     const textSequenceIndexRef = useRef(0);
     const specialTexts = ["TO THE MOON", "YOMIRGO", "AI MEGA PLANT"];
 
+    // --- 关卡生成逻辑 ---
     const generateMoreLevel = useCallback((targetY: number) => {
         const platforms: Platform[] = [];
         const coins: Coin[] = [];
@@ -172,8 +183,14 @@ const YomirgoGame: React.FC = () => {
         for (let i = particlesRef.current.length - 1; i >= 0; i--) { const p = particlesRef.current[i]; p.x += p.vx; p.y += p.vy; p.life -= 0.05; if (p.life <= 0) particlesRef.current.splice(i, 1); }
     };
 
-    const checkRectCollide = (r1: Player, r2: any) => (r1.x < r2.x + r2.w && r1.x + r1.w > r2.x && r1.y < r2.y + r2.h && r1.y + r1.h > r2.y);
-    const createParticles = (x: number, y: number, color: string, count: number, type: string) => { for (let i = 0; i < count; i++) particlesRef.current.push({ id: Math.random(), x, y, vx: (Math.random() - 0.5) * 6, vy: (Math.random() - 0.5) * 6, life: 1.0, color, size: Math.random() * 4 + 2, type: type as any }); };
+    const checkRectCollide = (r1: Player, r2: { x: number; y: number; w: number; h: number }) => (
+        r1.x < r2.x + r2.w && r1.x + r1.w > r2.x && r1.y < r2.y + r2.h && r1.y + r1.h > r2.y
+    );
+    
+    const createParticles = (x: number, y: number, color: string, count: number, type: 'trail' | 'sparkle' | 'explosion') => { 
+        for (let i = 0; i < count; i++) particlesRef.current.push({ id: Math.random(), x, y, vx: (Math.random() - 0.5) * 6, vy: (Math.random() - 0.5) * 6, life: 1.0, color, size: Math.random() * 4 + 2, type }); 
+    };
+
     const draw3DLetter = (ctx: CanvasRenderingContext2D, char: string, x: number, y: number, size: number) => { ctx.save(); ctx.fillStyle = '#A34800'; ctx.font = `900 ${size}px monospace`; ctx.fillText(char, x + 2, y + 2); ctx.fillStyle = COLOR_BRAND_ORANGE; ctx.fillText(char, x, y); ctx.strokeStyle = 'white'; ctx.lineWidth = 1; ctx.strokeText(char, x, y); ctx.restore(); };
 
     const draw = (ctx: CanvasRenderingContext2D) => {
@@ -196,12 +213,8 @@ const YomirgoGame: React.FC = () => {
         ctx.globalAlpha = 1.0; ctx.restore();
     };
 
-    const loop = () => { if (gameState === GameState.PLAYING) update(); if (canvasRef.current) { const ctx = canvasRef.current.getContext('2d'); if (ctx) draw(ctx); } requestRef.current = requestAnimationFrame(loop); };
+    const loop = () => { if (requestRef.current) cancelAnimationFrame(requestRef.current); if (gameState === GameState.PLAYING) update(); if (canvasRef.current) { const ctx = canvasRef.current.getContext('2d'); if (ctx) draw(ctx); } requestRef.current = requestAnimationFrame(loop); };
     useEffect(() => { requestRef.current = requestAnimationFrame(loop); return () => cancelAnimationFrame(requestRef.current); }, [gameState]);
-
-    const KeyCap = ({ label, size = 'w-8 sm:w-10', delay = '0s' }: any) => (
-        <div style={{ animationDelay: delay }} className={`${size} h-8 sm:h-10 border-2 border-[#E57D25]/30 rounded flex items-center justify-center text-[#E57D25]/40 font-bold font-mono text-xs sm:text-base transition-all animate-key-glow`}>{label}</div>
-    );
 
     return (
         <div className="relative rounded-xl overflow-hidden shadow-[0_0_20px_rgba(229,125,37,0.3)] border-4 border-[#333] bg-black w-full max-w-[600px] h-auto aspect-[3/4] sm:aspect-auto">
@@ -216,17 +229,15 @@ const YomirgoGame: React.FC = () => {
             <canvas ref={canvasRef} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} className="block w-full h-full object-contain" style={{ imageRendering: 'pixelated' }} />
             
             {(gameState === GameState.PLAYING || gameState === GameState.GAME_OVER) && (
-                <div className="absolute inset-x-0 top-2 px-2 sm:px-4 flex items-center justify-between pointer-events-none z-10 h-12 sm:h-16">
-                    <div className="flex-1 flex flex-col font-mono font-bold whitespace-nowrap" style={{ fontSize: 'clamp(8px, 2.5vw, 14px)', color: '#9ca3af' }}>
+                <div className="absolute inset-x-0 top-4 px-2 sm:px-4 flex items-start pointer-events-none z-10">
+                    <div className="flex flex-col font-mono font-bold text-sm text-gray-400 mt-2 flex-1">
                         <div>$YGO PRICE: ${currentPrice.toFixed(4)}</div>
                         <div>SCORE: {score}</div>
                     </div>
-                    <div className="flex-[2] flex justify-center">
-                        <h1 className="font-black text-[#E57D25] tracking-tight whitespace-nowrap" style={{ fontFamily: 'monospace', textShadow: '2px 2px 0px #A34800', fontSize: 'clamp(14px, 5vw, 36px)' }}>$YGO PUMP</h1>
+                    <div className="flex-1 flex justify-center mt-1">
+                        <h1 className="text-3xl sm:text-4xl font-black text-[#E57D25] tracking-tight" style={{ fontFamily: 'monospace', textShadow: '4px 4px 0px #A34800' }}>$YGO PUMP</h1>
                     </div>
-                    <div className="flex-1 flex justify-end">
-                        <img src="/logo.png" alt="Logo" className="h-3 sm:h-6 w-auto object-contain opacity-70" />
-                    </div>
+                    <div className="flex-1 flex justify-end mt-2"><img src="/logo.png" alt="Logo" className="h-6 w-auto object-contain opacity-70" /></div>
                 </div>
             )}
 
